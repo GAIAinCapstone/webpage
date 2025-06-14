@@ -13,11 +13,12 @@ def get_database_connection():
     """
     try:
         connection = mysql.connector.connect(
-            host='localhost',  # SSH 터널링을 위한 로컬호스트
+            host='127.0.0.1',  # SSH 터널링을 위한 로컬호스
             user='ksw',
             password='capstone',
             database='cleansys',
-            port=56796  # SSH 터널링 포트
+            port=3307
+             # SSH 터널링 포트
         )
         if connection.is_connected():
             print("데이터베이스 연결 성공")
@@ -54,7 +55,7 @@ def fetch_air_quality_data(connection, start_date=None, end_date=None):
             tsp_measure,
             tsp_stdr,
             nh3_measure,
-            nh3_stdr,
+            nh3_stdt,
             hf_measure,
             hf_stdr,
             hcl_measure,
