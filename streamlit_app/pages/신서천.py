@@ -6,7 +6,7 @@ import pandas as pd
 st.title("신서천 오염물질 시각화")
 
 pollutant = st.selectbox("오염물질 선택", ["NOx", "SOx", "TSP", "O₂", "FL1", "TMP"])
-year = st.selectbox("연도 선택", list(range(2018, 2026)))
+year = st.selectbox("연도 선택", list(range(2021, 2026)))
 
 # 테이블명 매핑
 table_map = {

@@ -14,7 +14,7 @@ def get_database_connection():
     try:
         connection = mysql.connector.connect(
             host='127.0.0.1',  # SSH 터널링을 위한 로컬호스
-            user='ksw',
+            user='ksm',
             password='capstone',
             database='cleansys',
             port=3307
