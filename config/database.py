@@ -27,6 +27,23 @@ def get_database_connection():
         print(f"데이터베이스 연결 중 오류 발생: {e}")
         return None
 
+def fetch_pollutant_data(table_name, year=None):
+    conn = get_database_connection()
+    try:
+        with conn.cursor(dictionary=True) as cursor:
+            query = f"SELECT * FROM `{table_name}`"
+            if year:
+                query += " WHERE 정보일시 BETWEEN %s AND %s"
+                start = f"{year}-01-01 00:00:00"
+                end = f"{year}-12-31 23:59:59"
+                cursor.execute(query, (start, end))
+            else:
+                cursor.execute(query)
+            return pd.DataFrame(cursor.fetchall())
+    finally:
+        conn.close()
+
+
 def fetch_air_quality_data(connection, start_date=None, end_date=None):
     """
     대기질 데이터를 가져옵니다.
