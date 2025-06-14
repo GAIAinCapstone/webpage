@@ -14,6 +14,7 @@ def get_weathercenter_connection():
             database='weatherCenter',
             port=3307
         )
+        
         if connection.is_connected():
             print("✅ weatherCenter 연결 성공")
             return connection
