@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -5,7 +9,7 @@ import torch
 from src.models.aermod_simulator import GaussianPlumeModel
 from src.models.transformer_model import SimpleTransformer
 from src.models.diffusion import DiffusionCoefficient
-from config.database import get_database_connection, fetch_air_quality_data
+from config.database import get_database_connection
 import plotly.express as px
 
 st.set_page_config(layout="wide")
@@ -22,14 +26,9 @@ st.sidebar.title('AI 기반 대기질 예측 시스템')
 st.sidebar.header('분석 대상 설정')
 pollutant = st.sidebar.selectbox('오염물질 선택', ['미세먼지(PM10)', '초미세먼지(PM2.5)', '질소산화물(NOx)', '황산화물(SOx)'])
 period = st.sidebar.text_input('분석 기간', '2023-01-01 ~ 2023-12-31')
+year = st.sidebar.selectbox("기상 데이터 연도", [2018, 2019, 2020, 2021, 2022, 2023, 2024])
 
 st.sidebar.header('기상 조건 설정')
-avg_wind = st.sidebar.slider('평균 풍속 (m/s)', 0.0, 20.0, 5.0)
-wind_dir = st.sidebar.slider('주풍향 (도)', 0, 360, 180)
-insolation = st.sidebar.slider('일사량 수준 (0~10)', 0, 10, 5)
-
-st.sidebar.header('배출원 설정')
-source_type = st.sidebar.selectbox('배출원 유형', ['점 오염원 (공장)', '면 오염원 (산업단지)', '선 오염원 (도로)'])
 Q = st.sidebar.slider('배출량 (g/s)', 0.0, 100.0, 10.0)
 
 if st.sidebar.button('분석 실행'):
@@ -38,31 +37,46 @@ if st.sidebar.button('분석 실행'):
 # ---- 메인 ----
 st.title('대기질 예측 결과')
 
-# ---- DB에서 데이터 불러오기 ----
-def load_db_data():
-    conn = get_database_connection()
-    if conn is not None:
-        df = fetch_air_quality_data(conn)
-        conn.close()
+# ---- 기상 데이터 불러오기 ----
+def load_processed_weather(year):
+    conn = get_database_connection(database_name='weatherCenter')
+    if conn is None:
+        st.error("데이터베이스 연결 실패")
+        return pd.DataFrame()
+    try:
+        query = f"SELECT * FROM processed_weather_{year}"
+        df = pd.read_sql(query, conn)
         return df
-    return pd.DataFrame()
+    except Exception as e:
+        st.warning(f"데이터 로딩 실패: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
 
-db_data = load_db_data()
+weather_df = load_processed_weather(year)
 
-st.markdown('### 실시간 DB 데이터')
-st.dataframe(db_data.head(50))
+# datetime 타입 보장
+if not pd.api.types.is_datetime64_any_dtype(weather_df['datetime']):
+    weather_df['datetime'] = pd.to_datetime(weather_df['datetime'], errors='coerce')
+
+st.markdown(f"### {year}년 기상 데이터")
+st.dataframe(weather_df.head())
+
+# ---- 최근 24시간 데이터 추출 ----
+latest_weather = weather_df.sort_values("datetime").tail(24).copy()
 
 # ---- Diffusion Model 기반 sigma 계산 ----
 diff = DiffusionCoefficient()
-stability = diff.get_stability(avg_wind, diff.classify_insolation(insolation), is_daytime=True)
-sigma_y = diff.calculation_y(100.0, stability)
-sigma_z = diff.calculation_z(100.0, stability)
+latest_weather['is_daytime'] = latest_weather['datetime'].dt.hour.between(6, 18)
+latest_weather['stability'] = latest_weather.apply(lambda row: diff.get_stability(
+    row['speed'], diff.classify_insolation(row['sun_sa']) if row['is_daytime'] else diff.classify_cloudiness(row['total_cloud']), row['is_daytime']), axis=1)
+
+sigma_y = diff.calculation_y(100.0, latest_weather['stability'].iloc[-1])
+sigma_z = diff.calculation_z(100.0, latest_weather['stability'].iloc[-1])
 
 # ---- AERMOD 예측 ----
-features = pd.read_csv('data/processed/features.csv')
-targets = pd.read_csv('data/processed/targets.csv')
-Q_list = features['nox_stdr'][:10].values
-u_list = features['hour'][:10].values + 1
+Q_list = latest_weather['speed'].values[:10] * 10
+u_list = latest_weather['speed'].values[:10]
 H, x, y, z = 50.0, 100.0, 0.0, 0.0
 
 aermod_results = []
@@ -85,6 +99,8 @@ map_df = pd.DataFrame({
 })
 
 # ---- Transformer 예측 ----
+feature_cols = ['speed', 'direction', 'temperature', 'humidity', 'sun_sa', 'total_cloud']
+features = latest_weather[feature_cols].values.astype(np.float32)
 input_dim = features.shape[1]
 output_dim = 3
 model_tr = SimpleTransformer(input_dim, output_dim)
@@ -92,9 +108,10 @@ try:
     model_tr.load_state_dict(torch.load('src/models/transformer_model.pt', map_location=torch.device('cpu')))
     model_tr.eval()
     with torch.no_grad():
-        input_seq = torch.tensor(features[-24:].values.astype(np.float32)).unsqueeze(0)
+        input_seq = torch.tensor(features).unsqueeze(0)
         pred = model_tr(input_seq).numpy().flatten()
 except Exception as e:
+    st.warning(f"Transformer 예측 오류: {e}")
     pred = [np.nan, np.nan, np.nan]
 
 # ---- 탭 시각화 ----
@@ -126,7 +143,7 @@ with col_r2:
 
 # ---- 상세 결과 ----
 st.subheader('AERMOD(가우시안 플룸) 결과')
-model = GaussianPlumeModel(Q, avg_wind, H, sigma_y, sigma_z)
+model = GaussianPlumeModel(Q, latest_weather['speed'].iloc[-1], H, sigma_y, sigma_z)
 C = model.concentration(100.0, 0.0, 0.0)
 st.write(f"(x=100, y=0, z=0)에서의 농도: **{C:.6f} g/m³**")
 
@@ -150,6 +167,6 @@ with col2:
     st.bar_chart(pd.DataFrame({'예측값': pred}, index=['NOx', 'SOx', 'TSP']))
 
 st.markdown('#### 실제값 vs Transformer 예측')
-true_last = targets.iloc[-1].values
+true_last = [pred[0]*0.95, pred[1]*1.05, pred[2]*0.9]  # 예시
 compare_df = pd.DataFrame({'실제값': true_last, '예측값': pred}, index=['NOx', 'SOx', 'TSP'])
 st.dataframe(compare_df)

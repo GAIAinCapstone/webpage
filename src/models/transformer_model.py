@@ -3,7 +3,7 @@ import torch.nn as nn
 import pandas as pd
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-
+#transormer_model.py
 class AirQualityDataset(Dataset):
     def __init__(self, features_path, targets_path, seq_len=24):
         self.X = pd.read_csv(features_path).values.astype(np.float32)
