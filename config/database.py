@@ -50,6 +50,41 @@ def fetch_pollutant_data(table_name, year=None, database_name=None):
     finally:
         conn.close()
 
+def fetch_pollutant_data_multi(table_names, year, database_name):
+    """
+    여러 테이블에서 동일한 기간의 데이터를 가져와 병합합니다.
+
+    Args:
+        table_names (list[str]): 테이블 이름 목록 (예: ["Jugyomyeon2023", "BoryeongPort2023"])
+        year (int): 조회할 연도 (예: 2023)
+        database_name (str): 연결할 DB 이름 (예: "airKorea")
+
+    Returns:
+        pd.DataFrame: 병합된 데이터프레임 (출처별 라벨 포함)
+    """
+    conn = get_database_connection(database_name)
+    all_data = []
+    try:
+        with conn.cursor(dictionary=True) as cursor:
+            start = f"{year}-01-01 01:00:00"
+            end = f"{year+1}-12-31 00:00:00"
+            for table in table_names:
+                query = f"""
+                    SELECT * FROM `{table}`
+                    WHERE measure_date BETWEEN %s AND %s
+                """
+                try:
+                    cursor.execute(query, (start, end))
+                    df = pd.DataFrame(cursor.fetchall())
+                    if not df.empty:
+                        df["출처"] = table  # 어느 테이블에서 왔는지 표시
+                        all_data.append(df)
+                except Exception as e:
+                    print(f"⚠️ 테이블 {table} 조회 실패: {e}")
+        return pd.concat(all_data) if all_data else pd.DataFrame()
+    finally:
+        conn.close()
+
 def fetch_air_quality_data(connection, start_date=None, end_date=None):
     """
     대기질 데이터를 가져옵니다.
