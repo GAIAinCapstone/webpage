@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Prepare Air Quality Data
 
 This module handles the preprocessing of raw air quality data retrieved from the database and prepares it for time-series forecasting models.
@@ -50,3 +51,6 @@ For usage, run:
 ```bash
 python src/data/prepare_data.py
 ```
+=======
+# webpage
+>>>>>>> 3f3f18d7cf486b5e73210c354bc8a62f06c2dadd

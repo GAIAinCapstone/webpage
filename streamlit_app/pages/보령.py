@@ -49,6 +49,31 @@ if not factory.empty:
     factory = factory.rename(columns={"measure_date": "datetime", value_col: "농도"})
 
 if not cleansys.empty and not factory.empty:
+    map_data = pd.DataFrame({
+        "이름": ["보령 발전소", "보령항 측정소", "주교면 측정소"],
+        "lat": [36.402838, 36.402838, 36.390847],
+        "lon": [126.495809, 126.495809, 126.569228]
+    })
+    fig = px.scatter_mapbox(
+        map_data,
+        lat="lat",
+        lon="lon",
+        text="이름",
+        color="이름",
+        color_discrete_map={
+            "보령 발전소": "red",
+            "보령항 측정소": "blue",
+            "주교면 측정소": "blue"
+        },
+        zoom=11,
+        height=200
+    )
+    fig.update_traces(marker=dict(size=20))
+    fig.update_layout(mapbox_style="open-street-map",
+                      margin={"r":0,"t":0,"l":0,"b":0}, 
+                      legend_title_text="")
+    st.plotly_chart(fig)
+
     merged_df = pd.concat([cleansys, factory])
 
     fig = px.line(
